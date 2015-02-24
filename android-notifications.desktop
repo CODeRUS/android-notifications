@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+X-Nemo-Application-Type=silica-qt5
+Exec=android-notifications
+Icon=android-notifications
+Name=Android Notifications
+X-Maemo-Service=org.coderus.androidnotifications
+X-Maemo-Object-Path=/org/freedesktop/Notifications
+X-Maemo-Method=org.freedesktop.Notifications.showUI

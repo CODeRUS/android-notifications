@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=org.coderus.androidnotifications
+Exec=/usr/bin/invoker -s --type=silica-qt5 /usr/bin/android-notifications
+SystemdService=android-notifications.service

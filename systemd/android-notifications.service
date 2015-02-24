@@ -1,0 +1,12 @@
+[Unit]
+Description=Android notifications
+Requires=lipstick.service
+After=lipstick.service
+
+[Service]
+Type=dbus
+ExecStart=/usr/bin/invoker -s --type=silica-qt5 /usr/bin/android-notifications
+BusName=org.coderus.androidnotifications
+
+[Install]
+WantedBy=post-user-session.target
