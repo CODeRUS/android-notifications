@@ -10,26 +10,29 @@
 #include <QDBusInterface>
 #include <QDBusConnection>
 #include <QDBusReply>
+#include <QDBusVirtualObject>
 #include <QDBusMetaType>
 
-class NotificationsWatcher : public QObject
+class NotificationsWatcher : public QDBusVirtualObject
 {
     Q_OBJECT
-    Q_CLASSINFO("D-Bus Interface", "org.freedesktop.Notifications")
 public:
     explicit NotificationsWatcher(QObject *parent = 0);
 
 public slots:
     void start();
 
-    Q_SCRIPTABLE Q_NOREPLY void showUI(const QStringList&);
-    Q_SCRIPTABLE void Notify(const QString &app_name, uint, const QString &, const QString &, const QString &, const QStringList &, const QVariantHash &hints, int);
+    QString introspect(const QString &path) const;
+    bool handleMessage(const QDBusMessage &message, const QDBusConnection &connection);
 
 private slots:
     void onViewDestroyed();
     void onViewClosing(QQuickCloseEvent*);
 
 private:
+    void showUI();
+    void handleNotify(const QVariantList &arguments);
+
     QDBusInterface *notifIface;
     MGConfItem *dconf;
     QQuickView *view;

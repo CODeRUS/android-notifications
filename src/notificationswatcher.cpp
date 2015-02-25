@@ -10,7 +10,7 @@
 #include <QDebug>
 
 NotificationsWatcher::NotificationsWatcher(QObject *parent) :
-    QObject(parent)
+    QDBusVirtualObject(parent)
 {
     qDBusRegisterMetaType<QVariantHash>();
     qDBusRegisterMetaType<LipstickNotification>();
@@ -38,14 +38,60 @@ void NotificationsWatcher::start()
     else {
         qDebug() << "Service registered successfully!";
 
-        QDBusConnection::sessionBus().registerObject("/org/freedesktop/Notifications", this, QDBusConnection::ExportScriptableSlots);
-        QString matchString = "interface='org.freedesktop.Notifications',member='Notify',type='method_call',eavesdrop='true'";
+        QDBusConnection::sessionBus().registerVirtualObject("/", this, QDBusConnection::SubPath);
+
         QDBusInterface busInterface("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus");
-        busInterface.call("AddMatch", matchString);
+        busInterface.call(QDBus::NoBlock, "AddMatch", "eavesdrop='true',type='method_call',interface='org.freedesktop.Notifications',member='Notify'");
     }
 }
 
-void NotificationsWatcher::showUI(const QStringList &)
+QString NotificationsWatcher::introspect(const QString &path) const
+{
+    if (path == "/") {
+        return "<node name=\"org\"/>";
+    }
+    else if (path == "/org") {
+        return "<node name=\"coderus\"/>";
+    }
+    else if (path == "/org/coderus") {
+        return "<node name=\"androidnotifications\"/>";
+    }
+    else if (path == "/org/coderus/androidnotifications") {
+        return "<interface name=\"org.coderus.androidnotifications\">\
+                    <method name=\"showUI\">\
+                        <arg direction=\"in\" type=\"as\" name=\"params\"/>\
+                        <annotation name=\"org.freedesktop.DBus.Method.NoReply\" value=\"true\"/>\
+                    </method>\
+                </interface>";
+    }
+
+    return "";
+}
+
+bool NotificationsWatcher::handleMessage(const QDBusMessage &message, const QDBusConnection &connection)
+{
+    const QVariantList dbusArguments = message.arguments();
+    const QString member = message.member();
+    const QString interface = message.interface();
+
+    if (interface == "org.freedesktop.Notifications" && member == "Notify") {
+        handleNotify(dbusArguments);
+
+        return true;
+    }
+    else if (interface == "org.coderus.androidnotifications" && member == "showUI") {
+        QDBusMessage reply = message.createReply();
+        connection.call(reply, QDBus::NoBlock);
+
+        showUI();
+
+        return true;
+    }
+
+    return false;
+}
+
+void NotificationsWatcher::showUI()
 {
     if (!view) {
         qDebug() << "Construct view";
@@ -68,12 +114,14 @@ void NotificationsWatcher::showUI(const QStringList &)
     }
 }
 
-void NotificationsWatcher::Notify(const QString &app_name, uint, const QString &, const QString &, const QString &, const QStringList &, const QVariantHash &hints, int)
+void NotificationsWatcher::handleNotify(const QVariantList &arguments)
 {
     QString androidAppName("AndroidNotification");
+    QString appName = arguments.value(0).toString();
+    QVariantHash hints = arguments.value(6).toHash();
 
-    if (app_name == androidAppName && !hints.contains(LipstickNotification::HINT_PRIORITY)) {
-        QDBusReply<NotificationList> reply = notifIface->call("GetNotifications", app_name);
+    if (appName == androidAppName && !hints.contains(LipstickNotification::HINT_PRIORITY)) {
+        QDBusReply<NotificationList> reply = notifIface->call("GetNotifications", appName);
         if (reply.isValid()) {
             NotificationList notifications = reply.value();
             foreach (LipstickNotification *lipsticknotification, notifications.notifications()) {
