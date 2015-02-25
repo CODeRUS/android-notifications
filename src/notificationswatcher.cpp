@@ -118,9 +118,11 @@ void NotificationsWatcher::handleNotify(const QVariantList &arguments)
 {
     QString androidAppName("AndroidNotification");
     QString appName = arguments.value(0).toString();
+    QString appIcon = arguments.value(2).toString();
+    QString body = arguments.value(4).toString();
     QVariantHash hints = arguments.value(6).toHash();
 
-    if (appName == androidAppName && !hints.contains(LipstickNotification::HINT_PRIORITY)) {
+    if (appName == androidAppName && !body.isEmpty() && !appIcon.isEmpty() && !hints.contains(LipstickNotification::HINT_PRIORITY)) {
         QDBusReply<NotificationList> reply = notifIface->call("GetNotifications", appName);
         if (reply.isValid()) {
             NotificationList notifications = reply.value();
