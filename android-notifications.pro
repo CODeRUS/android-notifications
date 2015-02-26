@@ -1,8 +1,8 @@
 TARGET = android-notifications
 
-QT += dbus
+QT += dbus dbus-private
 CONFIG += sailfishapp link_pkgconfig
-PKGCONFIG += sailfishapp mlite5
+PKGCONFIG += sailfishapp mlite5 dbus-1
 
 INCLUDEPATH += /usr/include/mlite5
 
@@ -13,7 +13,8 @@ SOURCES += \
     src/notificationswatcher.cpp \
     src/lipsticknotification.cpp \
     src/notification.cpp \
-    src/notificationmanagerproxy.cpp
+    src/notificationmanagerproxy.cpp \
+    src/dbusmessageprivate.cpp
 
 HEADERS += \
     src/notificationswatcher.h \

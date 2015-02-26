@@ -7,15 +7,29 @@
 
 #include <QGuiApplication>
 
+#include <QTimer>
+
 #include <QDebug>
+
+#include <QtDBus/private/qdbusmessage_p.h>
+
+extern "C" {
+static DBusHandlerResult
+qDBusSignalFilter(DBusConnection *connection, DBusMessage *message, void *data)
+{
+    Q_UNUSED(data);
+    Q_UNUSED(connection);
+    NotificationsWatcher *d = static_cast<NotificationsWatcher *>(data);
+
+    return d->handleRawMessage(message) ?
+        DBUS_HANDLER_RESULT_HANDLED :
+        DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+}
+}
 
 NotificationsWatcher::NotificationsWatcher(QObject *parent) :
     QDBusVirtualObject(parent)
 {
-    qDBusRegisterMetaType<QVariantHash>();
-    qDBusRegisterMetaType<LipstickNotification>();
-    qDBusRegisterMetaType<NotificationList>();
-
     notifIface = new QDBusInterface("org.freedesktop.Notifications",
                                     "/org/freedesktop/Notifications",
                                     "org.freedesktop.Notifications",
@@ -37,6 +51,26 @@ void NotificationsWatcher::start()
     }
     else {
         qDebug() << "Service registered successfully!";
+
+        DBusError error;
+        dbus_error_init (&error);
+
+        DBusConnection *connection = static_cast<DBusConnection *>(QDBusConnection::sessionBus().internalPointer());
+
+        dbus_bus_add_match(connection,
+                           "eavesdrop='true',type='method_return'",
+                           &error);
+        if (dbus_error_is_set (&error)) {
+            qWarning() << "Failed to set filter match rule:" << error.message;
+            dbus_error_free (&error);
+        }
+
+        dbus_connection_add_filter(connection, qDBusSignalFilter, this, 0);
+
+        qDBusRegisterMetaType<QVariantHash>();
+        qDBusRegisterMetaType<QVariantMap>();
+        qDBusRegisterMetaType<LipstickNotification>();
+        qDBusRegisterMetaType<NotificationList>();
 
         QDBusConnection::sessionBus().registerVirtualObject("/", this, QDBusConnection::SubPath);
 
@@ -75,7 +109,12 @@ bool NotificationsWatcher::handleMessage(const QDBusMessage &message, const QDBu
     const QString interface = message.interface();
 
     if (interface == "org.freedesktop.Notifications" && member == "Notify") {
-        handleNotify(dbusArguments);
+        if (handleNotify(dbusArguments)) {
+            QDBusError error;
+            DBusMessage *msg = QDBusMessagePrivate::toDBusMessage(message, QDBusConnection::UnixFileDescriptorPassing, &error);
+            int serial = dbus_message_get_serial(msg);
+            pendingSerials.append(serial);
+        }
 
         return true;
     }
@@ -89,6 +128,68 @@ bool NotificationsWatcher::handleMessage(const QDBusMessage &message, const QDBu
     }
 
     return false;
+}
+
+bool NotificationsWatcher::handleRawMessage(DBusMessage *msg)
+{
+    int type = dbus_message_get_type(msg);
+    if (type == QDBusMessage::ReplyMessage) {
+        int serial = dbus_message_get_reply_serial(msg);
+
+        if (pendingSerials.contains(serial)) {
+            DBusMessageIter iter;
+            dbus_message_iter_init(msg, &iter);
+            if (dbus_message_iter_get_arg_type(&iter) == DBUS_TYPE_UINT32) {
+                uint value;
+                dbus_message_iter_get_basic(&iter, &value);
+                QTimer *timer = new QTimer(this);
+                timer->setSingleShot(true);
+                signalTimers.insert(timer, value);
+                QObject::connect(timer, SIGNAL(timeout()), this, SLOT(timerTimeout()));
+                timer->start(1);
+            }
+            pendingSerials.removeAll(serial);
+        }
+    }
+
+    return false;
+}
+
+void NotificationsWatcher::handleNotification(uint id)
+{
+    QDBusReply<NotificationList> reply = notifIface->call("GetNotifications", "AndroidNotification");
+    if (reply.isValid()) {
+        NotificationList notifications = reply.value();
+        foreach (LipstickNotification *lipsticknotification, notifications.notifications()) {
+            if (lipsticknotification->replacesId() == id) {
+                qDebug() << "Faking sound";
+                Notification dummy;
+                dummy.setReplacesId(dconf->value(0).toInt());
+                dummy.close();
+                dummy.setHintValue(LipstickNotification::HINT_FEEDBACK, QString("chat"));
+                dummy.publish();
+                dconf->set(dummy.replacesId());
+
+                qDebug() << "Replacing notification" << lipsticknotification->replacesId();
+                Notification notification;
+                notification.setAppName("AndroidNotification");
+                notification.setSummary(lipsticknotification->summary());
+                notification.setBody(lipsticknotification->body());
+                notification.setPreviewSummary(lipsticknotification->hints().value(LipstickNotification::HINT_PREVIEW_SUMMARY).toString());
+                notification.setPreviewBody(lipsticknotification->hints().value(LipstickNotification::HINT_PREVIEW_BODY).toString());
+                notification.setHintValue(LipstickNotification::HINT_PREVIEW_ICON, lipsticknotification->hints().value(LipstickNotification::HINT_PREVIEW_ICON).toString());
+                notification.setHintValue(LipstickNotification::HINT_ICON, lipsticknotification->hints().value(LipstickNotification::HINT_PREVIEW_ICON).toString());
+                notification.setHintValue(LipstickNotification::HINT_PRIORITY, QString("100"));
+                notification.setHintValue(LipstickNotification::HINT_FEEDBACK, QString("chat"));
+                notification.setReplacesId(lipsticknotification->replacesId());
+                notification.publish();
+                break;
+            }
+        }
+    }
+    else {
+        qWarning() << reply.error().message();
+    }
 }
 
 void NotificationsWatcher::showUI()
@@ -114,48 +215,83 @@ void NotificationsWatcher::showUI()
     }
 }
 
-void NotificationsWatcher::handleNotify(const QVariantList &arguments)
+QVariant NotificationsWatcher::parse(const QDBusArgument &argument)
 {
-    QString androidAppName("AndroidNotification");
+    switch (argument.currentType()) {
+    case QDBusArgument::BasicType: {
+        QVariant v = argument.asVariant();
+        if (v.userType() == qMetaTypeId<QDBusObjectPath>())
+            return v.value<QDBusObjectPath>().path();
+        else if (v.userType() == qMetaTypeId<QDBusSignature>())
+            return v.value<QDBusSignature>().signature();
+        else
+            return v;
+    }
+    case QDBusArgument::VariantType: {
+        QVariant v = argument.asVariant().value<QDBusVariant>().variant();
+        if (v.userType() == qMetaTypeId<QDBusArgument>())
+            return parse(v.value<QDBusArgument>());
+        else
+            return v;
+    }
+    case QDBusArgument::ArrayType: {
+        QVariantList list;
+        argument.beginArray();
+        while (!argument.atEnd())
+            list.append(parse(argument));
+        argument.endArray();
+        return list;
+    }
+    case QDBusArgument::StructureType: {
+        QVariantList list;
+        argument.beginStructure();
+        while (!argument.atEnd())
+            list.append(parse(argument));
+        argument.endStructure();
+        return QVariant::fromValue(list);
+    }
+    case QDBusArgument::MapType: {
+        QVariantMap map;
+        argument.beginMap();
+        while (!argument.atEnd()) {
+            argument.beginMapEntry();
+            QVariant key = parse(argument);
+            QVariant value = parse(argument);
+            map.insert(key.toString(), value);
+            argument.endMapEntry();
+        }
+        argument.endMap();
+        return map;
+    }
+    default:
+        return QVariant();
+        break;
+    }
+}
+
+bool NotificationsWatcher::handleNotify(const QVariantList &arguments)
+{
     QString appName = arguments.value(0).toString();
     QString appIcon = arguments.value(2).toString();
     QString body = arguments.value(4).toString();
-    QVariantHash hints = arguments.value(6).toHash();
-
-    if (appName == androidAppName && !body.isEmpty() && !appIcon.isEmpty() && !hints.contains(LipstickNotification::HINT_PRIORITY)) {
-        QDBusReply<NotificationList> reply = notifIface->call("GetNotifications", appName);
-        if (reply.isValid()) {
-            NotificationList notifications = reply.value();
-            foreach (LipstickNotification *lipsticknotification, notifications.notifications()) {
-                if (lipsticknotification->appName() == androidAppName && !lipsticknotification->hints().contains(LipstickNotification::HINT_PRIORITY)) {
-                    qDebug() << "Faking sound";
-                    Notification dummy;
-                    dummy.setReplacesId(dconf->value(0).toInt());
-                    dummy.close();
-                    dummy.setHintValue(LipstickNotification::HINT_FEEDBACK, QString("chat"));
-                    dummy.publish();
-                    dconf->set(dummy.replacesId());
-
-                    qDebug() << "Replacing notification" << lipsticknotification->replacesId();
-                    Notification notification;
-                    notification.setAppName(androidAppName);
-                    notification.setSummary(lipsticknotification->summary());
-                    notification.setBody(lipsticknotification->body());
-                    notification.setPreviewSummary(lipsticknotification->hints().value(LipstickNotification::HINT_PREVIEW_SUMMARY).toString());
-                    notification.setPreviewBody(lipsticknotification->hints().value(LipstickNotification::HINT_PREVIEW_BODY).toString());
-                    notification.setHintValue(LipstickNotification::HINT_PREVIEW_ICON, lipsticknotification->hints().value(LipstickNotification::HINT_PREVIEW_ICON).toString());
-                    notification.setHintValue(LipstickNotification::HINT_ICON, lipsticknotification->hints().value(LipstickNotification::HINT_PREVIEW_ICON).toString());
-                    notification.setHintValue(LipstickNotification::HINT_PRIORITY, QString("100"));
-                    notification.setHintValue(LipstickNotification::HINT_FEEDBACK, QString("chat"));
-                    notification.setReplacesId(lipsticknotification->replacesId());
-                    notification.publish();
-                }
-            }
-        }
-        else {
-            qWarning() << reply.error().message();
-        }
+    QVariant arg6 = arguments.value(6);
+    QVariantMap hints;
+    if (arg6.userType() == qMetaTypeId<QDBusArgument>()) {
+        hints = parse(arg6.value<QDBusArgument>()).toMap();
     }
+    else
+        hints = arg6.value<QDBusVariant>().variant().toMap();
+
+    if (appName == "AndroidNotification"
+            && !body.isEmpty()
+            && !appIcon.isEmpty()
+            && hints.contains(LipstickNotification::HINT_PREVIEW_ICON)
+            && !hints.contains(LipstickNotification::HINT_PRIORITY)
+            ) {
+        return true;
+    }
+
+    return false;
 }
 
 void NotificationsWatcher::onViewDestroyed()
@@ -168,4 +304,15 @@ void NotificationsWatcher::onViewClosing(QQuickCloseEvent *)
 {
     qDebug() << "Window closed";
     delete view;
+}
+
+void NotificationsWatcher::timerTimeout()
+{
+    if (signalTimers.contains(sender())) {
+        uint id = signalTimers.value(sender());
+        signalTimers.remove(sender());
+        delete sender();
+
+        handleNotification(id);
+    }
 }

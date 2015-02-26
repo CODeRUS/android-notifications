@@ -12,6 +12,9 @@
 #include <QDBusReply>
 #include <QDBusVirtualObject>
 #include <QDBusMetaType>
+#include <QDBusMessage>
+
+#include <dbus/dbus.h>
 
 class NotificationsWatcher : public QDBusVirtualObject
 {
@@ -25,13 +28,22 @@ public slots:
     QString introspect(const QString &path) const;
     bool handleMessage(const QDBusMessage &message, const QDBusConnection &connection);
 
+    bool handleRawMessage(DBusMessage *msg);
+
 private slots:
     void onViewDestroyed();
     void onViewClosing(QQuickCloseEvent*);
 
+    void timerTimeout();
+    void handleNotification(uint id);
+
 private:
     void showUI();
-    void handleNotify(const QVariantList &arguments);
+    QVariant parse(const QDBusArgument &argument);
+    bool handleNotify(const QVariantList &arguments);
+
+    QList<int> pendingSerials;
+    QHash<QObject*, uint> signalTimers;
 
     QDBusInterface *notifIface;
     MGConfItem *dconf;
