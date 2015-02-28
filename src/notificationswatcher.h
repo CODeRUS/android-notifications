@@ -5,7 +5,7 @@
 
 #include <QQuickView>
 
-#include <MGConfItem>
+#include "mdconfagent.h"
 
 #include <QDBusInterface>
 #include <QDBusConnection>
@@ -46,7 +46,7 @@ private:
     QHash<QObject*, uint> signalTimers;
 
     QDBusInterface *notifIface;
-    MGConfItem *dconf;
+    MDConfAgent *dconf;
     QQuickView *view;
 };
 

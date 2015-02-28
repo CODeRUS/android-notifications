@@ -13,7 +13,7 @@ Name:       android-notifications
 %{!?qtc_make:%define qtc_make make}
 %{?qtc_builddir:%define _builddir %qtc_builddir}
 Summary:    Android notifications
-Version:    0.2.2
+Version:    0.5.0
 Release:    1
 Group:      Qt/Qt
 License:    LICENSE
@@ -25,6 +25,8 @@ BuildRequires:  pkgconfig(Qt5Core)
 BuildRequires:  pkgconfig(Qt5Qml)
 BuildRequires:  pkgconfig(Qt5Quick)
 BuildRequires:  desktop-file-utils
+BuildRequires:  pkgconfig(dbus-1)
+BuildRequires:  pkgconfig(dconf)
 
 %description
 Simple daemon adding sound (IM category), led and icon on lockscreen for android notifications.
@@ -79,6 +81,7 @@ fi
 
 %post
 # >> post
+systemctl-user restart ngfd.service
 systemctl-user restart android-notifications.service
 # << post
 
@@ -95,5 +98,7 @@ desktop-file-install --delete-original       \
 %{_datadir}/dbus-1/services/org.coderus.androidnotifications.service
 %{_libdir}/systemd/user/android-notifications.service
 %{_libdir}/systemd/user/post-user-session.target.wants/android-notifications.service
+%config %{_sysconfdir}/profiled/*.ini
+%config %{_datadir}/ngfd/events.d/*.ini
 # >> files
 # << files

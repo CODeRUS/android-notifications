@@ -2,16 +2,17 @@
 
 #include "lipsticknotification.h"
 #include "notification.h"
+#include "desktopfilesortmodel.h"
 
 #include "sailfishapp.h"
-
 #include <QGuiApplication>
+#include <QtQml>
 
 #include <QTimer>
 
-#include <QDebug>
-
 #include <QtDBus/private/qdbusmessage_p.h>
+
+#include <QDebug>
 
 extern "C" {
 static DBusHandlerResult
@@ -34,8 +35,18 @@ NotificationsWatcher::NotificationsWatcher(QObject *parent) :
                                     "/org/freedesktop/Notifications",
                                     "org.freedesktop.Notifications",
                                     QDBusConnection::sessionBus(), this);
-    dconf = new MGConfItem("/apps/android-notifications", this);
-    dconf->set(0);
+    dconf = new MDConfAgent("/apps/android-notifications/", this);
+    dconf->watchKey("dummyId");
+    dconf->watchKey("mode");
+    dconf->watchKey("whitelist");
+    dconf->watchKey("blacklist");
+    dconf->watchKey("defaultCategory");
+    dconf->watchKey("category_silent");
+    dconf->watchKey("category_chat");
+    dconf->watchKey("category_sms");
+    dconf->watchKey("category_email");
+    dconf->watchKey("category_android_notify");
+    dconf->setValue("dummyId", 0);
 
     view = NULL;
 }
@@ -68,7 +79,6 @@ void NotificationsWatcher::start()
         dbus_connection_add_filter(connection, qDBusSignalFilter, this, 0);
 
         qDBusRegisterMetaType<QVariantHash>();
-        qDBusRegisterMetaType<QVariantMap>();
         qDBusRegisterMetaType<LipstickNotification>();
         qDBusRegisterMetaType<NotificationList>();
 
@@ -76,6 +86,8 @@ void NotificationsWatcher::start()
 
         QDBusInterface busInterface("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus");
         busInterface.call(QDBus::NoBlock, "AddMatch", "eavesdrop='true',type='method_call',interface='org.freedesktop.Notifications',member='Notify'");
+
+        qmlRegisterType<DesktopFileSortModel>("org.coderus.androidnotifications", 1, 0, "DesktopFileSortModel");
     }
 }
 
@@ -162,13 +174,49 @@ void NotificationsWatcher::handleNotification(uint id)
         NotificationList notifications = reply.value();
         foreach (LipstickNotification *lipsticknotification, notifications.notifications()) {
             if (lipsticknotification->replacesId() == id) {
-                qDebug() << "Faking sound";
-                Notification dummy;
-                dummy.setReplacesId(dconf->value(0).toInt());
-                dummy.close();
-                dummy.setHintValue(LipstickNotification::HINT_FEEDBACK, QString("chat"));
-                dummy.publish();
-                dconf->set(dummy.replacesId());
+                QString package = lipsticknotification->icon().split("/").last();
+                package.chop(14); // waiting for proper solution
+
+                if (dconf->value("mode", 0) == 0) { // whitelist
+                    QStringList whitelist = dconf->value("whitelist").toStringList();
+                    if (!whitelist.contains(package)) {
+                        return;
+                    }
+                }
+                else { // blacklist
+                    QStringList blacklist = dconf->value("blacklist").toStringList();
+                    if (blacklist.contains(package)) {
+                        return;
+                    }
+                }
+
+                QString category = dconf->value("defaultCategory", "android_notify").toString();
+
+                if (dconf->value("category_silent", QStringList()).toStringList().contains(package)) {
+                    category = "";
+                }
+                else if (dconf->value("category_chat", QStringList()).toStringList().contains(package)) {
+                    category = "chat";
+                }
+                else if (dconf->value("category_sms", QStringList()).toStringList().contains(package)) {
+                    category = "sms";
+                }
+                else if (dconf->value("category_email", QStringList()).toStringList().contains(package)) {
+                    category = "email";
+                }
+                else if (dconf->value("category_android_notify", QStringList()).toStringList().contains(package)) {
+                    category = "android_notify";
+                }
+
+                if (!category.isEmpty()) {
+                    qDebug() << "Faking sound with" << category;
+                    Notification dummy;
+                    dummy.setReplacesId(dconf->value("dummyId").toUInt());
+                    dummy.close();
+                    dummy.setHintValue(LipstickNotification::HINT_FEEDBACK, category);
+                    dummy.publish();
+                    dconf->setValue("dummyId", dummy.replacesId());
+                }
 
                 qDebug() << "Replacing notification" << lipsticknotification->replacesId();
                 Notification notification;
@@ -180,7 +228,9 @@ void NotificationsWatcher::handleNotification(uint id)
                 notification.setHintValue(LipstickNotification::HINT_PREVIEW_ICON, lipsticknotification->hints().value(LipstickNotification::HINT_PREVIEW_ICON).toString());
                 notification.setHintValue(LipstickNotification::HINT_ICON, lipsticknotification->hints().value(LipstickNotification::HINT_PREVIEW_ICON).toString());
                 notification.setHintValue(LipstickNotification::HINT_PRIORITY, QString("100"));
-                notification.setHintValue(LipstickNotification::HINT_FEEDBACK, QString("chat"));
+                if (!category.isEmpty()) {
+                    notification.setHintValue(LipstickNotification::HINT_FEEDBACK, category);
+                }
                 notification.setReplacesId(lipsticknotification->replacesId());
                 notification.publish();
                 break;
