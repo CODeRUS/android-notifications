@@ -74,7 +74,7 @@ Page {
             ComboBox {
                 id: modeCombo
                 width: parent.width
-                label: "Working mode"
+                label: "Working mode:"
                 currentIndex: config.mode
                 menu: ContextMenu {
                     MenuItem {
@@ -110,20 +110,20 @@ Page {
             ComboBox {
                 id: defaultCombo
                 width: parent.width
-                label: "Default category"
+                label: "Default category:"
                 menu: ContextMenu {
                     Repeater {
                         width: parent.width
                         model: categories.length
-                        delegate: MenuItem { text: categoryNames[index] }
+                        delegate: MenuItem {
+                            text: categoryNames[index]
+                            onClicked: config.defaultCategory = categories[index]
+                        }
                     }
                 }
                 Component.onCompleted: {
                     _updating = false
                     currentIndex = categories.indexOf(config.defaultCategory)
-                }
-                onCurrentItemChanged: {
-                    config.defaultCategory = categories[currentIndex]
                 }
             }
 
@@ -138,7 +138,6 @@ Page {
                     width: parent.width
                     label: categoryNames[index] + ":"
                     value: "%1 applications".arg(config["category_" + categories[index]].length)
-                    description: "Click to edit"
                     onClicked: {
                         var selector = pageStack.push(Qt.resolvedUrl("SelectionPage.qml"), {selectedValues: config["category_" + categories[index]]})
                         selector.accepted.connect(function() {

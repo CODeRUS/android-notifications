@@ -223,10 +223,30 @@ void NotificationsWatcher::handleNotification(uint id)
                 notification.setAppName("AndroidNotification");
                 notification.setSummary(lipsticknotification->summary());
                 notification.setBody(lipsticknotification->body());
-                notification.setPreviewSummary(lipsticknotification->hints().value(LipstickNotification::HINT_PREVIEW_SUMMARY).toString());
-                notification.setPreviewBody(lipsticknotification->hints().value(LipstickNotification::HINT_PREVIEW_BODY).toString());
-                notification.setHintValue(LipstickNotification::HINT_PREVIEW_ICON, lipsticknotification->hints().value(LipstickNotification::HINT_PREVIEW_ICON).toString());
-                notification.setHintValue(LipstickNotification::HINT_ICON, lipsticknotification->hints().value(LipstickNotification::HINT_PREVIEW_ICON).toString());
+                if (lipsticknotification->hints().contains(LipstickNotification::HINT_PREVIEW_SUMMARY)) {
+                    notification.setPreviewSummary(lipsticknotification->hints().value(LipstickNotification::HINT_PREVIEW_SUMMARY).toString());
+                }
+                else {
+                    notification.setPreviewSummary(lipsticknotification->summary());
+                }
+                if (lipsticknotification->hints().contains(LipstickNotification::HINT_PREVIEW_BODY)) {
+                    notification.setPreviewBody(lipsticknotification->hints().value(LipstickNotification::HINT_PREVIEW_BODY).toString());
+                }
+                else {
+                    notification.setPreviewBody(lipsticknotification->body());
+                }
+                if (lipsticknotification->hints().contains(LipstickNotification::HINT_PREVIEW_ICON)) {
+                    notification.setHintValue(LipstickNotification::HINT_PREVIEW_ICON, lipsticknotification->hints().value(LipstickNotification::HINT_PREVIEW_ICON).toString());
+                }
+                else {
+                    notification.setHintValue(LipstickNotification::HINT_PREVIEW_ICON, lipsticknotification->appIcon());
+                }
+                if (lipsticknotification->hints().contains(LipstickNotification::HINT_ICON)) {
+                    notification.setHintValue(LipstickNotification::HINT_ICON, lipsticknotification->hints().value(LipstickNotification::HINT_PREVIEW_ICON).toString());
+                }
+                else {
+                    notification.setHintValue(LipstickNotification::HINT_ICON, lipsticknotification->appIcon());
+                }
                 notification.setHintValue(LipstickNotification::HINT_PRIORITY, QString("100"));
                 if (!category.isEmpty()) {
                     notification.setHintValue(LipstickNotification::HINT_FEEDBACK, category);
@@ -323,6 +343,7 @@ bool NotificationsWatcher::handleNotify(const QVariantList &arguments)
 {
     QString appName = arguments.value(0).toString();
     QString appIcon = arguments.value(2).toString();
+    QString summary = arguments.value(3).toString();
     QString body = arguments.value(4).toString();
     QVariant arg6 = arguments.value(6);
     QVariantMap hints;
@@ -334,8 +355,8 @@ bool NotificationsWatcher::handleNotify(const QVariantList &arguments)
 
     if (appName == "AndroidNotification"
             && !body.isEmpty()
+            && !summary.isEmpty()
             && !appIcon.isEmpty()
-            && hints.contains(LipstickNotification::HINT_PREVIEW_ICON)
             && !hints.contains(LipstickNotification::HINT_PRIORITY)
             ) {
         return true;

@@ -1,8 +1,8 @@
 TARGET = android-notifications
 
 QT += dbus dbus-private
-CONFIG += sailfishapp link_pkgconfig
-PKGCONFIG += sailfishapp mlite5 dbus-1 dconf
+CONFIG += link_pkgconfig sailfishapp
+PKGCONFIG += mlite5 dbus-1 dconf
 
 DEFINES += APP_VERSION=\\\"$$VERSION\\\"
 
