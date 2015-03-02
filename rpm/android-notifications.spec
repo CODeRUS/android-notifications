@@ -8,7 +8,7 @@ Name:       android-notifications
 %{!?qtc_make:%define qtc_make make}
 %{?qtc_builddir:%define _builddir %qtc_builddir}
 Summary:    Android notifications
-Version:    0.5.2
+Version:    0.5.3
 Release:    1
 Group:      Qt/Qt
 License:    LICENSE
@@ -93,7 +93,7 @@ desktop-file-install --delete-original       \
 %{_datadir}/dbus-1/services/org.coderus.androidnotifications.service
 %{_libdir}/systemd/user/android-notifications.service
 %{_libdir}/systemd/user/post-user-session.target.wants/android-notifications.service
-%config %{_sysconfdir}/profiled/*.ini
-%config %{_datadir}/ngfd/events.d/*.ini
+%{_sysconfdir}/profiled/*.ini
+%{_datadir}/ngfd/events.d/*.ini
 # >> files
 # << files

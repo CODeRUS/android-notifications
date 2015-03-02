@@ -211,8 +211,10 @@ void NotificationsWatcher::handleNotification(uint id)
                 if (!category.isEmpty()) {
                     qDebug() << "Faking sound with" << category;
                     Notification dummy;
-                    dummy.setReplacesId(dconf->value("dummyId").toUInt());
-                    dummy.close();
+                    if (dconf->value("dummyId").toUInt() > 0) {
+                        dummy.setReplacesId(dconf->value("dummyId").toUInt());
+                        dummy.close();
+                    }
                     dummy.setHintValue(LipstickNotification::HINT_FEEDBACK, category);
                     dummy.publish();
                     dconf->setValue("dummyId", dummy.replacesId());
