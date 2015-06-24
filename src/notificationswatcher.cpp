@@ -56,9 +56,9 @@ NotificationsWatcher::NotificationsWatcher(QObject *parent) :
     }
     QString databaseName = databasePath + "/notifications.db";
 
-    db = QSqlDatabase::addDatabase("QSQLITE", metaObject()->className());
+    db = QSqlDatabase::addDatabase("QSQLITE", "android-notifications-connection");
     db.setDatabaseName(databaseName);
-    db.open();
+    qDebug() << "opening database" << databaseName << db.open();
 }
 
 NotificationsWatcher::~NotificationsWatcher()
