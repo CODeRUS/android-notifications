@@ -8,7 +8,7 @@ Name:       android-notifications
 %{!?qtc_make:%define qtc_make make}
 %{?qtc_builddir:%define _builddir %qtc_builddir}
 Summary:    Android notifications
-Version:    0.5.3
+Version:    0.6.0
 Release:    1
 Group:      Qt/Qt
 License:    LICENSE
@@ -56,6 +56,8 @@ mkdir -p %{buildroot}/usr/lib/systemd/user/post-user-session.target.wants
 ln -s ../android-notifications.service %{buildroot}/usr/lib/systemd/user/post-user-session.target.wants/android-notifications.service
 # << install post
 
+desktop-file-install --delete-original --dir %{buildroot}%{_datadir}/applications %{buildroot}%{_datadir}/applications/*.desktop
+
 %pre
 # >> pre
 systemctl-user stop android-notifications.service
@@ -80,13 +82,9 @@ systemctl-user restart ngfd.service
 systemctl-user restart android-notifications.service
 # << post
 
-desktop-file-install --delete-original       \
-  --dir %{buildroot}%{_datadir}/applications             \
-   %{buildroot}%{_datadir}/applications/*.desktop
-
 %files
 %defattr(-,root,root,-)
-%{_bindir}
+%attr(4755, root, root) %{_bindir}/*
 %{_datadir}/%{name}
 %{_datadir}/applications/%{name}.desktop
 %{_datadir}/icons/hicolor/86x86/apps/%{name}.png

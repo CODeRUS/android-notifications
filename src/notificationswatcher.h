@@ -16,11 +16,16 @@
 
 #include <dbus/dbus.h>
 
+#include <QSqlDatabase>
+#include <QSqlQuery>
+#include <QSqlRecord>
+
 class NotificationsWatcher : public QDBusVirtualObject
 {
     Q_OBJECT
 public:
     explicit NotificationsWatcher(QObject *parent = 0);
+    virtual ~NotificationsWatcher();
 
 public slots:
     void start();
@@ -40,7 +45,7 @@ private slots:
 private:
     void showUI();
     QVariant parse(const QDBusArgument &argument);
-    bool handleNotify(const QVariantList &arguments);
+    QString handleNotify(const QVariantList &arguments);
 
     QList<int> pendingSerials;
     QHash<QObject*, uint> signalTimers;
@@ -48,6 +53,8 @@ private:
     QDBusInterface *notifIface;
     MDConfAgent *dconf;
     QQuickView *view;
+
+    QSqlDatabase db;
 };
 
 #endif // NOTIFICATIONSWATCHER_H

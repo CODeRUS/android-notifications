@@ -4,8 +4,14 @@
 
 #include "notificationswatcher.h"
 
+#include <grp.h>
+#include <pwd.h>
+
 int main(int argc, char *argv[])
 {
+    setuid(getpwnam("nemo")->pw_uid);
+    setgid(getgrnam("privileged")->gr_gid);
+
     QScopedPointer<QGuiApplication> app(SailfishApp::application(argc, argv));
     app->setApplicationDisplayName("Android notifications");
     app->setApplicationName("Android notifications");
