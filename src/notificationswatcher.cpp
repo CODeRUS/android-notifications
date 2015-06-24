@@ -136,8 +136,7 @@ bool NotificationsWatcher::handleMessage(const QDBusMessage &message, const QDBu
     const QString interface = message.interface();
 
     if (interface == "org.freedesktop.Notifications" && member == "Notify") {
-        QString appName = handleNotify(dbusArguments);
-        if (!appName.isEmpty()) {
+        if (handleNotify(dbusArguments)) {
             QDBusError error;
             DBusMessage *msg = QDBusMessagePrivate::toDBusMessage(message, QDBusConnection::UnixFileDescriptorPassing, &error);
             int serial = dbus_message_get_serial(msg);
@@ -269,16 +268,12 @@ void NotificationsWatcher::handleNotification(uint id)
         if (expireAt.contains(id)) {
             const qint64 expiry(expireAt.value(id));
             if (expiry <= currentTime) {
-                qDebug() << "EXPIRED AT RESTORE:" << appName << appIcon << summary << body << actions[id] << hints[id] << expireTimeout << "->" << id;
                 expiredIds.append(id);
-                //continue;
             } else {
                 nextTimeout = qMin(expiry, nextTimeout);
                 unexpiredRemaining = true;
             }
         }
-
-        qDebug() << id << appName;
 
         LipstickNotification *lipsticknotification = new LipstickNotification(appName, id, appIcon, summary, body, actions[id], hints[id], expireTimeout, this);
 
@@ -444,7 +439,7 @@ QVariant NotificationsWatcher::parse(const QDBusArgument &argument)
     }
 }
 
-QString NotificationsWatcher::handleNotify(const QVariantList &arguments)
+bool NotificationsWatcher::handleNotify(const QVariantList &arguments)
 {
     QString appName = arguments.value(0).toString();
     QString appIcon = arguments.value(2).toString();
@@ -465,10 +460,10 @@ QString NotificationsWatcher::handleNotify(const QVariantList &arguments)
             && !appIcon.isEmpty()
             && !hints.contains(LipstickNotification::HINT_PRIORITY)
             ) {
-        return appName;
+        return true;
     }
 
-    return QString();
+    return false;
 }
 
 void NotificationsWatcher::onViewDestroyed()

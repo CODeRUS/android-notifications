@@ -45,7 +45,7 @@ private slots:
 private:
     void showUI();
     QVariant parse(const QDBusArgument &argument);
-    QString handleNotify(const QVariantList &arguments);
+    bool handleNotify(const QVariantList &arguments);
 
     QList<int> pendingSerials;
     QHash<QObject*, uint> signalTimers;
