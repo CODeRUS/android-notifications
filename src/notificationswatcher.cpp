@@ -50,11 +50,12 @@ NotificationsWatcher::NotificationsWatcher(QObject *parent) :
 
     view = NULL;
 
-    QString databasePath = QDir::homePath() + "/.local/share/system/privileged" + QDir::separator() + "Notifications";
-    if (!QDir::root().exists(databasePath)) {
-        QDir::root().mkpath(databasePath);
+    qDebug() << "UID:" << getuid() << "GID:" << getgid();
+
+    QString databaseName = QDir::homePath() + "/.local/share/system/privileged/Notifications/notifications.db";
+    if (!QFile(databaseName).exists()) {
+        qWarning() << "problem accessing database!";
     }
-    QString databaseName = databasePath + "/notifications.db";
 
     db = QSqlDatabase::addDatabase("QSQLITE", "android-notifications-connection");
     db.setDatabaseName(databaseName);
@@ -63,7 +64,6 @@ NotificationsWatcher::NotificationsWatcher(QObject *parent) :
 
 NotificationsWatcher::~NotificationsWatcher()
 {
-    db.commit();
 }
 
 void NotificationsWatcher::start()

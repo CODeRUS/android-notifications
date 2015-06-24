@@ -8,7 +8,7 @@ Name:       android-notifications
 %{!?qtc_make:%define qtc_make make}
 %{?qtc_builddir:%define _builddir %qtc_builddir}
 Summary:    Android notifications
-Version:    0.6.0
+Version:    0.6.1
 Release:    1
 Group:      Qt/Qt
 License:    LICENSE
@@ -84,8 +84,8 @@ systemctl-user restart android-notifications.service
 # << post
 
 %files
-%defattr(-,root,root,-)
 %attr(4755, root, root) %{_bindir}/*
+%defattr(-,root,root,-)
 %{_datadir}/%{name}
 %{_datadir}/applications/%{name}.desktop
 %{_datadir}/icons/hicolor/86x86/apps/%{name}.png
