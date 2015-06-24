@@ -22,6 +22,7 @@ BuildRequires:  pkgconfig(Qt5Quick)
 BuildRequires:  desktop-file-utils
 BuildRequires:  pkgconfig(dbus-1)
 BuildRequires:  pkgconfig(dconf)
+BuildRequires:  pkgconfig(mlite5)
 
 %description
 Simple daemon adding sound (IM category), led and icon on lockscreen for android notifications.
