@@ -140,6 +140,7 @@ bool NotificationsWatcher::handleMessage(const QDBusMessage &message, const QDBu
             QDBusError error;
             DBusMessage *msg = QDBusMessagePrivate::toDBusMessage(message, QDBusConnection::UnixFileDescriptorPassing, &error);
             int serial = dbus_message_get_serial(msg);
+            qDebug() << "waiting for serial" << serial;
             pendingSerials.append(serial);
         }
 
@@ -174,6 +175,7 @@ bool NotificationsWatcher::handleRawMessage(DBusMessage *msg)
                 signalTimers.insert(timer, value);
                 QObject::connect(timer, SIGNAL(timeout()), this, SLOT(timerTimeout()));
                 timer->start(1);
+                qDebug() << "processing serial" << serial << "id" << value;
             }
             pendingSerials.removeAll(serial);
         }
@@ -184,6 +186,7 @@ bool NotificationsWatcher::handleRawMessage(DBusMessage *msg)
 
 void NotificationsWatcher::handleNotification(uint id)
 {
+    qDebug() << "reading database";
     // Gather actions for each notification
     QSqlQuery actionsQuery(db);
     actionsQuery.prepare("SELECT * FROM actions WHERE id=(:id);");
@@ -360,6 +363,9 @@ void NotificationsWatcher::handleNotification(uint id)
         notification.publish();
         //break;
     }
+    else {
+        qWarning() << "can't read database!";
+    }
 }
 
 void NotificationsWatcher::showUI()
@@ -454,16 +460,10 @@ bool NotificationsWatcher::handleNotify(const QVariantList &arguments)
         hints = arg6.value<QDBusVariant>().variant().toMap();
     qDebug() << appName << body << summary << appIcon << hints;
 
-    if (hints.value(LipstickNotification::HINT_PREVIEW_ICON).toString().startsWith("/data")
+    return (hints.value(LipstickNotification::HINT_PREVIEW_ICON).toString().startsWith("/data") || appIcon.startsWith("/data") || appName.contains("AndroidNotification"))
             && !body.isEmpty()
             && !summary.isEmpty()
-            && !appIcon.isEmpty()
-            && !hints.contains(LipstickNotification::HINT_PRIORITY)
-            ) {
-        return true;
-    }
-
-    return false;
+            && !hints.contains(LipstickNotification::HINT_PRIORITY);
 }
 
 void NotificationsWatcher::onViewDestroyed()
