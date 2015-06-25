@@ -109,6 +109,7 @@ public:
 
     QVariant hintValue(const QString &hint) const;
     void setHintValue(const QString &hint, const QVariant &value);
+    void setHints(const QVariantHash &hints);
 
     Q_INVOKABLE void publish();
     Q_INVOKABLE void close();

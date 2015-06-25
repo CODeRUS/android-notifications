@@ -49,17 +49,6 @@ NotificationsWatcher::NotificationsWatcher(QObject *parent) :
     dconf->setValue("dummyId", 0);
 
     view = NULL;
-
-    qDebug() << "UID:" << getuid() << "GID:" << getgid();
-
-    QString databaseName = QDir::homePath() + "/.local/share/system/privileged/Notifications/notifications.db";
-    if (!QFile(databaseName).exists()) {
-        qWarning() << "problem accessing database!";
-    }
-
-    db = QSqlDatabase::addDatabase("QSQLITE", "android-notifications-connection");
-    db.setDatabaseName(databaseName);
-    qDebug() << "opening database" << databaseName << db.open();
 }
 
 NotificationsWatcher::~NotificationsWatcher()
@@ -141,7 +130,7 @@ bool NotificationsWatcher::handleMessage(const QDBusMessage &message, const QDBu
             DBusMessage *msg = QDBusMessagePrivate::toDBusMessage(message, QDBusConnection::UnixFileDescriptorPassing, &error);
             int serial = dbus_message_get_serial(msg);
             qDebug() << "waiting for serial" << serial;
-            pendingSerials.append(serial);
+            pendingSerials.insert(serial, dbusArguments);
         }
 
         return true;
@@ -173,199 +162,16 @@ bool NotificationsWatcher::handleRawMessage(DBusMessage *msg)
                 QTimer *timer = new QTimer(this);
                 timer->setSingleShot(true);
                 signalTimers.insert(timer, value);
+                pendingNotifications.insert(value, pendingSerials.value(serial));
                 QObject::connect(timer, SIGNAL(timeout()), this, SLOT(timerTimeout()));
                 timer->start(1);
                 qDebug() << "processing serial" << serial << "id" << value;
             }
-            pendingSerials.removeAll(serial);
+            pendingSerials.remove(serial);
         }
     }
 
     return false;
-}
-
-void NotificationsWatcher::handleNotification(uint id)
-{
-    qDebug() << "reading database";
-    // Gather actions for each notification
-    QSqlQuery actionsQuery(db);
-    actionsQuery.prepare("SELECT * FROM actions WHERE id=(:id);");
-    actionsQuery.bindValue(":id", id);
-    actionsQuery.exec();
-    QSqlRecord actionsRecord = actionsQuery.record();
-    int actionsTableIdFieldIndex = actionsRecord.indexOf("id");
-    int actionsTableActionFieldIndex = actionsRecord.indexOf("action");
-    QHash<uint, QStringList> actions;
-    while (actionsQuery.next()) {
-        uint id = actionsQuery.value(actionsTableIdFieldIndex).toUInt();
-        actions[id].append(actionsQuery.value(actionsTableActionFieldIndex).toString());
-    }
-
-    // Gather hints for each notification
-    QSqlQuery hintsQuery(db);
-    hintsQuery.prepare("SELECT * FROM hints WHERE id=(:id);");
-    hintsQuery.bindValue(":id", id);
-    hintsQuery.exec();
-    QSqlRecord hintsRecord = hintsQuery.record();
-    int hintsTableIdFieldIndex = hintsRecord.indexOf("id");
-    int hintsTableHintFieldIndex = hintsRecord.indexOf("hint");
-    int hintsTableValueFieldIndex = hintsRecord.indexOf("value");
-    QHash<uint, QVariantHash> hints;
-    while (hintsQuery.next()) {
-        uint id = hintsQuery.value(hintsTableIdFieldIndex).toUInt();
-        const QString hintName(hintsQuery.value(hintsTableHintFieldIndex).toString());
-        const QVariant hintValue(hintsQuery.value(hintsTableValueFieldIndex));
-
-        QVariant value;
-        if (hintName == LipstickNotification::HINT_TIMESTAMP) {
-            // Timestamps in the DB are already UTC but not marked as such, so they will
-            // be converted again unless specified to be UTC
-            QDateTime timestamp(QDateTime::fromString(hintValue.toString(), Qt::ISODate));
-            timestamp.setTimeSpec(Qt::UTC);
-            value = timestamp.toString(Qt::ISODate);
-        } else {
-            value = hintValue;
-        }
-        hints[id].insert(hintName, value);
-    }
-
-    // Gather expiration times for displayed notifications
-    QSqlQuery expirationQuery(db);
-    expirationQuery.prepare("SELECT * FROM expiration WHERE id=(:id);");
-    expirationQuery.bindValue(":id", id);
-    expirationQuery.exec();
-    QSqlRecord expirationRecord = expirationQuery.record();
-    int expirationTableIdFieldIndex = expirationRecord.indexOf("id");
-    int expirationTableExpireAtFieldIndex = expirationRecord.indexOf("expire_at");
-    QHash<uint, qint64> expireAt;
-    while (expirationQuery.next()) {
-        uint id = expirationQuery.value(expirationTableIdFieldIndex).toUInt();
-        expireAt.insert(id, expirationQuery.value(expirationTableExpireAtFieldIndex).value<qint64>());
-    }
-
-    const qint64 currentTime(QDateTime::currentDateTimeUtc().toMSecsSinceEpoch());
-    QList<uint> expiredIds;
-    qint64 nextTimeout = std::numeric_limits<qint64>::max();
-    bool unexpiredRemaining = false;
-
-    // Create the notifications
-    QSqlQuery notificationsQuery(db);
-    notificationsQuery.prepare("SELECT * FROM notifications WHERE id=(:id);");
-    notificationsQuery.bindValue(":id", id);
-    notificationsQuery.exec();
-    QSqlRecord notificationsRecord = notificationsQuery.record();
-    int notificationsTableIdFieldIndex = notificationsRecord.indexOf("id");
-    int notificationsTableAppNameFieldIndex = notificationsRecord.indexOf("app_name");
-    int notificationsTableAppIconFieldIndex = notificationsRecord.indexOf("app_icon");
-    int notificationsTableSummaryFieldIndex = notificationsRecord.indexOf("summary");
-    int notificationsTableBodyFieldIndex = notificationsRecord.indexOf("body");
-    int notificationsTableExpireTimeoutFieldIndex = notificationsRecord.indexOf("expire_timeout");
-    if (notificationsQuery.next()) {
-        uint id = notificationsQuery.value(notificationsTableIdFieldIndex).toUInt();
-        QString appName = notificationsQuery.value(notificationsTableAppNameFieldIndex).toString();
-        QString appIcon = notificationsQuery.value(notificationsTableAppIconFieldIndex).toString();
-        QString summary = notificationsQuery.value(notificationsTableSummaryFieldIndex).toString();
-        QString body = notificationsQuery.value(notificationsTableBodyFieldIndex).toString();
-        int expireTimeout = notificationsQuery.value(notificationsTableExpireTimeoutFieldIndex).toInt();
-
-        if (expireAt.contains(id)) {
-            const qint64 expiry(expireAt.value(id));
-            if (expiry <= currentTime) {
-                expiredIds.append(id);
-            } else {
-                nextTimeout = qMin(expiry, nextTimeout);
-                unexpiredRemaining = true;
-            }
-        }
-
-        LipstickNotification *lipsticknotification = new LipstickNotification(appName, id, appIcon, summary, body, actions[id], hints[id], expireTimeout, this);
-
-        QString package = lipsticknotification->icon().split("/").last();
-        package.chop(14); // waiting for proper solution
-
-        if (dconf->value("mode", 0) == 0) { // whitelist
-            QStringList whitelist = dconf->value("whitelist").toStringList();
-            if (!whitelist.contains(package)) {
-                return;
-            }
-        }
-        else { // blacklist
-            QStringList blacklist = dconf->value("blacklist").toStringList();
-            if (blacklist.contains(package)) {
-                return;
-            }
-        }
-
-        QString category = dconf->value("defaultCategory", "android_notify").toString();
-
-        if (dconf->value("category_silent", QStringList()).toStringList().contains(package)) {
-            category = "";
-        }
-        else if (dconf->value("category_chat", QStringList()).toStringList().contains(package)) {
-            category = "chat";
-        }
-        else if (dconf->value("category_sms", QStringList()).toStringList().contains(package)) {
-            category = "sms";
-        }
-        else if (dconf->value("category_email", QStringList()).toStringList().contains(package)) {
-            category = "email";
-        }
-        else if (dconf->value("category_android_notify", QStringList()).toStringList().contains(package)) {
-            category = "android_notify";
-        }
-
-        if (!category.isEmpty()) {
-            qDebug() << "Faking sound with" << category;
-            Notification dummy;
-            if (dconf->value("dummyId").toUInt() > 0) {
-                dummy.setReplacesId(dconf->value("dummyId").toUInt());
-                dummy.close();
-            }
-            dummy.setHintValue(LipstickNotification::HINT_FEEDBACK, category);
-            dummy.publish();
-            dconf->setValue("dummyId", dummy.replacesId());
-        }
-
-        qDebug() << "Replacing notification" << lipsticknotification->replacesId();
-        Notification notification;
-        notification.setAppName(appName);
-        notification.setSummary(lipsticknotification->summary());
-        notification.setBody(lipsticknotification->body());
-        if (lipsticknotification->hints().contains(LipstickNotification::HINT_PREVIEW_SUMMARY)) {
-            notification.setPreviewSummary(lipsticknotification->hints().value(LipstickNotification::HINT_PREVIEW_SUMMARY).toString());
-        }
-        else {
-            notification.setPreviewSummary(lipsticknotification->summary());
-        }
-        if (lipsticknotification->hints().contains(LipstickNotification::HINT_PREVIEW_BODY)) {
-            notification.setPreviewBody(lipsticknotification->hints().value(LipstickNotification::HINT_PREVIEW_BODY).toString());
-        }
-        else {
-            notification.setPreviewBody(lipsticknotification->body());
-        }
-        if (lipsticknotification->hints().contains(LipstickNotification::HINT_PREVIEW_ICON)) {
-            notification.setHintValue(LipstickNotification::HINT_PREVIEW_ICON, lipsticknotification->hints().value(LipstickNotification::HINT_PREVIEW_ICON).toString());
-        }
-        else {
-            notification.setHintValue(LipstickNotification::HINT_PREVIEW_ICON, lipsticknotification->appIcon());
-        }
-        if (lipsticknotification->hints().contains(LipstickNotification::HINT_ICON)) {
-            notification.setHintValue(LipstickNotification::HINT_ICON, lipsticknotification->hints().value(LipstickNotification::HINT_PREVIEW_ICON).toString());
-        }
-        else {
-            notification.setHintValue(LipstickNotification::HINT_ICON, lipsticknotification->appIcon());
-        }
-        notification.setHintValue(LipstickNotification::HINT_PRIORITY, QString("100"));
-        if (!category.isEmpty()) {
-            notification.setHintValue(LipstickNotification::HINT_FEEDBACK, category);
-        }
-        notification.setReplacesId(lipsticknotification->replacesId());
-        notification.publish();
-        //break;
-    }
-    else {
-        qWarning() << "can't read database!";
-    }
 }
 
 void NotificationsWatcher::showUI()
@@ -456,8 +262,9 @@ bool NotificationsWatcher::handleNotify(const QVariantList &arguments)
     if (arg6.userType() == qMetaTypeId<QDBusArgument>()) {
         hints = parse(arg6.value<QDBusArgument>()).toMap();
     }
-    else
+    else {
         hints = arg6.value<QDBusVariant>().variant().toMap();
+    }
     qDebug() << appName << body << summary << appIcon << hints;
 
     return (hints.value(LipstickNotification::HINT_PREVIEW_ICON).toString().startsWith("/data") || appIcon.startsWith("/data") || appName.contains("AndroidNotification"))
@@ -484,7 +291,87 @@ void NotificationsWatcher::timerTimeout()
         uint id = signalTimers.value(sender());
         signalTimers.remove(sender());
         delete sender();
+        QVariantList notificationParameters = pendingNotifications.value(id);
+        pendingNotifications.remove(id);
 
-        handleNotification(id);
+        QString appName = notificationParameters[0].toString();
+        QString icon = notificationParameters[2].toString();
+        QString summary = notificationParameters[3].toString();
+        QString body = notificationParameters[4].toString();
+        QVariantMap hints;
+        QVariant arg6 = notificationParameters.value(6);
+        if (arg6.userType() == qMetaTypeId<QDBusArgument>()) {
+            hints = parse(arg6.value<QDBusArgument>()).toMap();
+        }
+        else {
+            hints = arg6.value<QDBusVariant>().variant().toMap();
+        }
+
+        qDebug() << appName << icon << summary << body << hints;
+
+        QString package = icon.split("/").last();
+        package.chop(14); // waiting for proper solution
+
+        if (dconf->value("mode", 0) == 0) { // whitelist
+            QStringList whitelist = dconf->value("whitelist").toStringList();
+            if (!whitelist.contains(package)) {
+                return;
+            }
+        }
+        else { // blacklist
+            QStringList blacklist = dconf->value("blacklist").toStringList();
+            if (blacklist.contains(package)) {
+                return;
+            }
+        }
+
+        QString category = dconf->value("defaultCategory", "android_notify").toString();
+
+        if (dconf->value("category_silent", QStringList()).toStringList().contains(package)) {
+            category = "";
+        }
+        else if (dconf->value("category_chat", QStringList()).toStringList().contains(package)) {
+            category = "chat";
+        }
+        else if (dconf->value("category_sms", QStringList()).toStringList().contains(package)) {
+            category = "sms";
+        }
+        else if (dconf->value("category_email", QStringList()).toStringList().contains(package)) {
+            category = "email";
+        }
+        else if (dconf->value("category_android_notify", QStringList()).toStringList().contains(package)) {
+            category = "android_notify";
+        }
+
+        if (!category.isEmpty()) {
+            qDebug() << "Faking sound with" << category;
+            Notification dummy;
+            if (dconf->value("dummyId").toUInt() > 0) {
+                dummy.setReplacesId(dconf->value("dummyId").toUInt());
+                dummy.close();
+            }
+            dummy.setHintValue(LipstickNotification::HINT_FEEDBACK, category);
+            dummy.publish();
+            dconf->setValue("dummyId", dummy.replacesId());
+        }
+
+        qDebug() << "Replacing notification" << id;
+        Notification notification;
+        notification.setAppName(appName);
+        notification.setSummary(summary);
+        notification.setBody(body);
+        hints.insert(LipstickNotification::HINT_PRIORITY, QString("100"));
+        if (!category.isEmpty()) {
+            hints.insert(LipstickNotification::HINT_FEEDBACK, category);
+        }
+        hints.insert(LipstickNotification::HINT_ICON, icon);
+        QVariantHash hints_;
+        foreach (const QString &key, hints.keys()) {
+            hints_.insert(key, hints.value(key));
+        }
+        qDebug() << hints_;
+        notification.setHints(hints_);
+        notification.setReplacesId(id);
+        notification.publish();
     }
 }

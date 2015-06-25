@@ -16,10 +16,6 @@
 
 #include <dbus/dbus.h>
 
-#include <QSqlDatabase>
-#include <QSqlQuery>
-#include <QSqlRecord>
-
 class NotificationsWatcher : public QDBusVirtualObject
 {
     Q_OBJECT
@@ -40,21 +36,19 @@ private slots:
     void onViewClosing(QQuickCloseEvent*);
 
     void timerTimeout();
-    void handleNotification(uint id);
 
 private:
     void showUI();
     QVariant parse(const QDBusArgument &argument);
     bool handleNotify(const QVariantList &arguments);
 
-    QList<int> pendingSerials;
+    QHash<int, QVariantList> pendingSerials;
+    QHash<uint, QVariantList> pendingNotifications;
     QHash<QObject*, uint> signalTimers;
 
     QDBusInterface *notifIface;
     MDConfAgent *dconf;
     QQuickView *view;
-
-    QSqlDatabase db;
 };
 
 #endif // NOTIFICATIONSWATCHER_H

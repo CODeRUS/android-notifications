@@ -84,8 +84,8 @@ systemctl-user restart android-notifications.service
 # << post
 
 %files
-%attr(4755, root, root) %{_bindir}/*
 %defattr(-,root,root,-)
+%{_bindir}
 %{_datadir}/%{name}
 %{_datadir}/applications/%{name}.desktop
 %{_datadir}/icons/hicolor/86x86/apps/%{name}.png

@@ -1,6 +1,6 @@
 TARGET = android-notifications
 
-QT += dbus dbus-private sql
+QT += dbus dbus-private
 CONFIG += link_pkgconfig sailfishapp
 PKGCONFIG += mlite5 dbus-1 dconf
 

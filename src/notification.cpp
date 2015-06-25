@@ -670,6 +670,11 @@ void Notification::setHintValue(const QString &hint, const QVariant &value)
     hints_.insert(hint, value);
 }
 
+void Notification::setHints(const QVariantHash &hints)
+{
+    hints_ = hints;
+}
+
 /*!
     \qmlmethod void Notification::notifications()
 
