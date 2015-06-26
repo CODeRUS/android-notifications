@@ -34,7 +34,9 @@ Page {
 
         property string profileName: "general"
         property string notificationToneKey: "android.notification.tone"
+        property string notificationToneEnabled: "android.notification.enabled"
         property string notificationTone: ""
+        property bool notificationEnabled: true
 
         Component.onCompleted: {
             profiled.typedCall("get_value",
@@ -44,6 +46,14 @@ Page {
                                ],
                                function (result) {
                                    notificationTone = result;
+                               });
+            profiled.typedCall("get_value",
+                               [
+                                   {"type": "s", "value": profileName},
+                                   {"type": "s", "value": notificationToneEnabled}
+                               ],
+                               function (result) {
+                                   notificationEnabled = result == "On";
                                });
         }
     }
@@ -163,23 +173,32 @@ Page {
 
             ValueButton {
                 label: "Custom notification tone"
-                value: profiled.notificationTone ? metadataReader.getTitle(profiled.notificationTone) : "no sound"
+                value: profiled.notificationEnabled ? metadataReader.getTitle(profiled.notificationTone) : "no sound"
                 onClicked: {
                     var dialog = pageStack.push(dialogComponent, {
                         activeFilename: profiled.notificationTone,
-                        activeSoundTitle: value,
+                        activeSoundTitle: metadataReader.getTitle(profiled.notificationTone),
                         activeSoundSubtitle: "Custom notification tone",
-                        noSound: false
+                        noSound: !profiled.notificationEnabled
                         })
 
                     dialog.accepted.connect(
                         function() {
-                            profiled.notificationTone = dialog.selectedFilename
+                            if (!dialog.noSound) {
+                                profiled.notificationTone = dialog.selectedFilename
+                                profiled.typedCall("set_value",
+                                                   [
+                                                       {"type": "s", "value": profiled.profileName},
+                                                       {"type": "s", "value": profiled.notificationToneKey},
+                                                       {"type": "s", "value": profiled.notificationTone}
+                                                   ])
+                            }
+                            profiled.notificationEnabled = !dialog.noSound
                             profiled.typedCall("set_value",
                                                [
                                                    {"type": "s", "value": profiled.profileName},
-                                                   {"type": "s", "value": profiled.notificationToneKey},
-                                                   {"type": "s", "value": profiled.notificationTone}
+                                                   {"type": "s", "value": profiled.notificationToneEnabled},
+                                                   {"type": "s", "value": (profiled.notificationEnabled ? "On" : "Off")}
                                                ])
                         })
                 }

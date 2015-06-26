@@ -8,7 +8,7 @@ Name:       android-notifications
 %{!?qtc_make:%define qtc_make make}
 %{?qtc_builddir:%define _builddir %qtc_builddir}
 Summary:    Android notifications
-Version:    0.6.3
+Version:    0.6.4
 Release:    1
 Group:      Qt/Qt
 License:    LICENSE
